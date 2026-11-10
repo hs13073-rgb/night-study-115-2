@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>家長請假</title><link rel="stylesheet" href="style.css"><script src="config.js"></script><script src="common.js"></script></head><body>
+<main>
+ <div id="login" class="card"><h2 style="margin-top:0">家長請假系統</h2>
+  <p class="hint">僅限家長使用。請輸入班級、座號及報名後寄到 Email 的 6 位數驗證碼。請假不予退費。</p>
+  <div class="row"><div><label>班級</label><input type="text" id="cls" inputmode="numeric"></div><div><label>座號</label><input type="number" id="seat" min="1"></div></div>
+  <label>驗證碼</label><input type="password" id="code" inputmode="numeric" maxlength="6" autocomplete="off">
+  <button id="loginBtn">登入</button> <button id="forgot" class="sec">忘記驗證碼</button>
+  <div id="lmsg" class="msg" hidden></div>
+ </div>
+ <div id="app" hidden>
+  <div class="card"><b id="who"></b> <button class="sec sm" id="logout">登出</button>
+   <div class="hint" id="info"></div></div>
+  <div class="card"><h2 style="margin-top:0">新增請假</h2>
+   <label>請假日期 <small>（僅列出您已報名、未暫停且未請假的日期）</small></label><select id="date"></select>
+   <label>請假事由</label><select id="reason"></select>
+   <label>備註說明 <small>（事由選「其他」時必填）</small></label><textarea id="note" rows="3"></textarea>
+   <button id="send">送出請假</button><div id="msg" class="msg" hidden></div></div>
+  <div class="card"><h2 style="margin-top:0">我的請假紀錄</h2><div class="tbl"><table><thead><tr><th>日期</th><th>事由</th><th>備註</th><th>狀態</th><th></th></tr></thead><tbody id="list"></tbody></table></div></div>
+ </div>
+</main>
+<script>
+header('leave.html');
+let auth=null;
+const val=id=>$('#'+id).value.trim();
+function render(r){
+ $('#login').hidden=true;$('#app').hidden=false;
+ const s=r.student;
+ $('#who').textContent=`${s.cls}班 ${s.seat}號 ${s.name}`;
+ $('#info').innerHTML=`自習日：${s.days.join('、')}　違規點數：${s.points}`+(r.off.length?`<br>暫停自習日（無法請假）：${r.off.map(o=>esc(o.date+' '+o.reason)).join('、')}`:'');
+ $('#date').innerHTML=r.dates.length?r.dates.map(d=>`<option value="${d.date}">${d.label}</option>`).join(''):'<option value="">（目前沒有可請假的日期）</option>';
+ $('#reason').innerHTML='<option value="">請選擇事由</option>'+r.reasons.map(x=>`<option>${esc(x)}</option>`).join('');
+ $('#list').innerHTML=r.leaves.map(l=>`<tr><td>${l.date}</td><td>${esc(l.reason)}</td><td>${esc(l.note)}</td><td>${l.status==='有效'?'<span class="tag">有效</span>':l.status}</td><td>${l.canCancel?`<button class="red sm" data-id="${l.id}">取消</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="hint">尚無紀錄</td></tr>';
+ document.querySelectorAll('#list button').forEach(b=>b.onclick=()=>{if(confirm('確定取消這筆請假？'))run(b,null,async()=>{render(await api('pCancel',{...auth,id:b.dataset.id}))})});
+}
+$('#loginBtn').onclick=()=>run($('#loginBtn'),$('#lmsg'),async()=>{
+ auth={cls:val('cls'),seat:val('seat'),code:val('code')};
+ try{render(await api('pLogin',auth))}catch(e){auth=null;throw e}
+});
+$('#forgot').onclick=()=>run($('#forgot'),$('#lmsg'),async()=>{
+ const email=prompt('請輸入報名時填寫的 Email（需先填妥上方班級、座號）');if(!email)return;
+ show($('#lmsg'),(await api('pResend',{cls:val('cls'),seat:val('seat'),email})).msg,'ok');
+});
+$('#logout').onclick=()=>{auth=null;$('#code').value='';$('#app').hidden=true;$('#login').hidden=false};
+$('#send').onclick=()=>run($('#send'),$('#msg'),async()=>{
+ if(!val('date'))throw new Error('沒有可選擇的日期');if(!val('reason'))throw new Error('請選擇請假事由');
+ const r=await api('pLeave',{...auth,date:val('date'),reason:val('reason'),note:val('note')});
+ render(r);$('#note').value='';show($('#msg'),r.msg,'ok');
+});
+</script></body></html>

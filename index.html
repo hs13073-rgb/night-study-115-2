@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>夜讀報名</title><link rel="stylesheet" href="style.css"><script src="config.js"></script><script src="common.js"></script></head><body>
+<main>
+ <div id="banner" class="banner closed">載入中…</div>
+ <div class="card"><h2 style="margin-top:0">報名辦法及自律公約</h2>
+  <div id="rules" class="rules">載入中…</div><div id="offs" class="hint"></div>
+  <label style="font-weight:400;margin-top:12px"><input type="checkbox" id="agree"> 我（家長／學生）已詳細閱讀並同意以上報名辦法及自律公約</label>
+  <button id="startBtn" disabled>報名 / 加退選</button>
+ </div>
+ <form id="form" class="card" hidden onsubmit="return false">
+  <h2 style="margin-top:0" id="formTitle">填寫資料</h2>
+  <div class="row"><div><label>班級 <small>例：901</small></label><input type="text" id="cls" inputmode="numeric" maxlength="6" required></div>
+   <div><label>座號</label><input type="number" id="seat" min="1" max="99" required></div></div>
+  <label>學生姓名</label><input type="text" id="name" required>
+  <label>自習天數 <small>（可複選，週一~週五 17:40-20:30，週六 08:00-12:00）</small></label>
+  <div class="days" id="days"></div><div class="hint" id="dayHint"></div>
+  <label>備註</label><textarea id="note" rows="2"></textarea>
+  <label>家長姓名 <small>兩人請以 / 分隔，例：王大明/李小美</small></label><input type="text" id="parents" required>
+  <label>連絡電話 <small>兩人請以 / 分隔並與姓名順序一致，例：0912345678/0987654321</small></label><input type="text" id="phones" required>
+  <label>Email 信箱 <small>（用於寄送報名確認、驗證碼、請假及違規通知）</small></label><input type="email" id="email" required>
+  <button id="submit">送出</button><div id="msg" class="msg" hidden></div>
+ </form>
+</main>
+<script>
+header('index.html');
+let INFO;
+const DAYS=['週一','週二','週三','週四','週五','週六'];
+$('#days').innerHTML=DAYS.map((d,i)=>`<label><input type="checkbox" value="${i}">${d}</label>`).join('');
+(async()=>{
+ try{
+  INFO=await api('info');
+  $('#sysTitle').textContent=INFO.title||'夜讀系統';
+  $('#rules').innerHTML=renderRules(INFO.rules);
+  const p=INFO.phase, open=p.mode==='first'||p.mode==='round';
+  $('#banner').className='banner '+(open?'open':'closed'); $('#banner').textContent=(open?'🟢 ':'🔴 ')+p.msg;
+  if(INFO.off.length)$('#offs').textContent='已公告暫停自習日：'+INFO.off.map(o=>o.date+'('+o.reason+')').join('、');
+  const upd=()=>{$('#startBtn').disabled=!($('#agree').checked&&open)};
+  $('#agree').onchange=upd; upd();
+  if(p.mode==='round')$('#dayHint').textContent='提醒：全部取消勾選送出＝全部退選，退出後不得再加入；異動次週統一處理。';
+  $('#formTitle').textContent=(p.label||'')+' 資料填寫';
+ }catch(e){$('#banner').textContent=e.message}
+})();
+$('#startBtn').onclick=()=>{$('#form').hidden=false;$('#form').scrollIntoView({behavior:'smooth'})};
+$('#submit').onclick=()=>run($('#submit'),$('#msg'),async()=>{
+ const f=id=>$('#'+id).value.trim();
+ const days=[...document.querySelectorAll('#days input')].map(x=>x.checked);
+ if(!f('cls')||!f('seat')||!f('name')||!f('parents')||!f('phones')||!f('email'))throw new Error('請填寫所有必填欄位');
+ const ps=f('parents').split(/[\/／]/).filter(Boolean),ph=f('phones').split(/[\/／]/).filter(Boolean);
+ if(ps.length!==ph.length||ps.length>2)throw new Error('家長姓名與電話人數需相同（最多兩人，以 / 分隔）');
+ if(!days.some(Boolean)&&INFO.phase.mode==='round'){if(!confirm('您未勾選任何日期，將視為【全部退選】且退出後不得再加入，確定嗎？'))return}
+ else if(!days.some(Boolean))throw new Error('請至少勾選一天自習日');
+ const r=await api('register',{agree:$('#agree').checked,cls:f('cls'),seat:f('seat'),name:f('name'),days,note:f('note'),parents:f('parents'),phones:f('phones'),email:f('email')});
+ show($('#msg'),r.msg,'ok');
+});
+</script></body></html>

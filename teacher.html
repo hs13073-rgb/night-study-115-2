@@ -1,0 +1,87 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>夜讀老師</title><link rel="stylesheet" href="style.css"><script src="config.js"></script><script src="common.js"></script></head><body>
+<main>
+ <div id="login" class="card"><h2 style="margin-top:0">夜讀老師登入</h2>
+  <label>老師</label><select id="tname"></select>
+  <label>密碼</label><input type="password" id="pw" autocomplete="off">
+  <button id="loginBtn">登入</button><div id="lmsg" class="msg" hidden></div></div>
+ <div id="app" hidden>
+  <div class="card"><b id="who"></b> <button class="sec sm" id="logout">登出</button></div>
+  <div class="tabs"><button data-t="daily" class="on">今日名單／請假</button><button data-t="vio">登記違規</button><button data-t="query">違規查詢</button></div>
+
+  <section id="t-daily" class="card">
+   <div class="row" style="align-items:end"><div><label>日期</label><input type="date" id="dd"></div><div><button id="dBtn" style="margin:0">查詢</button></div></div>
+   <div id="dsum" class="hint" style="margin:8px 0"></div>
+   <h3>請假名單</h3><div class="tbl"><table><thead><tr><th>班級</th><th>座號</th><th>姓名</th><th>事由</th><th>備註</th></tr></thead><tbody id="leaveList"></tbody></table></div>
+   <h3>應到名單 <small class="hint">（點「違規」可帶入登記）</small></h3>
+   <div class="tbl"><table><thead><tr><th>班級</th><th>座號</th><th>姓名</th><th>點數</th><th>狀態</th><th></th></tr></thead><tbody id="attList"></tbody></table></div>
+  </section>
+
+  <section id="t-vio" class="card" hidden>
+   <div class="row"><div><label>班級</label><input type="text" id="vcls"></div><div><label>座號</label><input type="number" id="vseat"></div></div>
+   <div id="vwho" class="hint"></div>
+   <label>違規日期</label><input type="date" id="vdate">
+   <label>違規項目</label><select id="vitem"></select>
+   <label>說明</label><textarea id="vnote" rows="3"></textarea>
+   <button id="vBtn" class="red">登記違規（記點 1 次）</button><div id="vmsg" class="msg" hidden></div>
+  </section>
+
+  <section id="t-query" class="card" hidden>
+   <div class="row"><div><label>班級</label><input type="text" id="qcls"></div><div><label>座號</label><input type="number" id="qseat"></div><div><label>姓名</label><input type="text" id="qname"></div></div>
+   <div class="row"><div><label>起</label><input type="date" id="qf"></div><div><label>迄</label><input type="date" id="qt"></div></div>
+   <button id="qBtn">查詢</button><div id="qmsg" class="msg" hidden></div>
+   <h3>學生累計</h3><div class="tbl"><table><thead><tr><th>班級</th><th>座號</th><th>姓名</th><th>累計點數</th><th>狀態</th></tr></thead><tbody id="qsum"></tbody></table></div>
+   <h3>明細</h3><div class="tbl"><table><thead><tr><th>日期</th><th>班級</th><th>座號</th><th>姓名</th><th>項目</th><th>說明</th><th>老師</th><th>累計</th></tr></thead><tbody id="qlist"></tbody></table></div>
+  </section>
+ </div>
+</main>
+<script>
+header('teacher.html');
+let T=null;
+const val=id=>$('#'+id).value.trim();
+const tk=()=>({token:T.token});
+api('teachers').then(r=>$('#tname').innerHTML=r.names.map(n=>`<option>${esc(n)}</option>`).join('')).catch(e=>show($('#lmsg'),e.message,'err'));
+function enter(){
+ $('#login').hidden=true;$('#app').hidden=false;$('#who').textContent='登入老師：'+T.name;
+ $('#vitem').innerHTML=T.items.map(x=>`<option>${esc(x)}</option>`).join('');
+ $('#dd').value=$('#vdate').value=T.today;daily();
+}
+const saved=sessionStorage.getItem('nsT');if(saved){T=JSON.parse(saved);setTimeout(()=>{enter()},0)}
+$('#loginBtn').onclick=()=>run($('#loginBtn'),$('#lmsg'),async()=>{
+ T=await api('tLogin',{name:$('#tname').value,password:$('#pw').value});$('#pw').value='';
+ sessionStorage.setItem('nsT',JSON.stringify(T));enter();
+});
+$('#logout').onclick=()=>{sessionStorage.removeItem('nsT');location.reload()};
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>switchTab(b.dataset.t));
+function switchTab(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+ ['daily','vio','query'].forEach(k=>$('#t-'+k).hidden=k!==t)}
+async function guard(f){try{return await f()}catch(e){if(/逾時/.test(e.message)){sessionStorage.removeItem('nsT');alert(e.message);location.reload()}else throw e}}
+async function daily(){
+ const r=await guard(()=>api('tDaily',{...tk(),date:val('dd')}));
+ const lv=r.attendees.filter(a=>a.leave);
+ $('#dsum').textContent=r.off?`${r.date}（${r.weekday}）暫停自習：${r.off}`:(!r.session?`${r.date}（${r.weekday}）非自習日`:`${r.date}（${r.weekday}）應到 ${r.attendees.length} 人，請假 ${lv.length} 人，實到 ${r.attendees.length-lv.length} 人`);
+ $('#leaveList').innerHTML=lv.map(a=>`<tr><td>${esc(a.cls)}</td><td>${esc(a.seat)}</td><td>${esc(a.name)}</td><td>${esc(a.reason)}</td><td>${esc(a.note)}</td></tr>`).join('')||'<tr><td colspan="5" class="hint">無</td></tr>';
+ $('#attList').innerHTML=r.attendees.map(a=>`<tr><td>${esc(a.cls)}</td><td>${esc(a.seat)}</td><td>${esc(a.name)}</td><td>${a.points?`<span class="tag ${a.points>=2?'red':''}">${a.points}</span>`:0}</td><td>${a.leave?'<span class="tag">請假</span>':''}</td><td><button class="sm red" data-c="${esc(a.cls)}" data-s="${esc(a.seat)}">違規</button></td></tr>`).join('');
+ document.querySelectorAll('#attList button').forEach(b=>b.onclick=()=>{$('#vcls').value=b.dataset.c;$('#vseat').value=b.dataset.s;$('#vdate').value=r.date;switchTab('vio');look()});
+}
+$('#dBtn').onclick=()=>run($('#dBtn'),null,daily);
+async function look(){
+ if(!val('vcls')||!val('vseat')){$('#vwho').textContent='';return}
+ try{const r=await api('tLookup',{...tk(),cls:val('vcls'),seat:val('vseat')});
+  $('#vwho').textContent=r.found?`${r.name}　目前 ${r.points} 點　狀態：${r.status}`:'查無此學生';}catch(e){$('#vwho').textContent=e.message}
+}
+$('#vcls').onchange=$('#vseat').onchange=look;
+$('#vBtn').onclick=()=>{
+ if(!confirm(`確定登記 ${val('vcls')}班${val('vseat')}號 違規？\n${$('#vitem').value}`))return;
+ run($('#vBtn'),$('#vmsg'),async()=>{
+  const r=await guard(()=>api('tAdd',{...tk(),cls:val('vcls'),seat:val('vseat'),date:val('vdate'),item:$('#vitem').value,note:val('vnote')}));
+  show($('#vmsg'),r.msg+(r.reached?'\n⚠ 已達退班門檻':''),r.reached?'err':'ok');$('#vnote').value='';look();daily();
+ });
+};
+$('#qBtn').onclick=()=>run($('#qBtn'),$('#qmsg'),async()=>{
+ const r=await guard(()=>api('tQuery',{...tk(),cls:val('qcls'),seat:val('qseat'),name:val('qname'),from:val('qf'),to:val('qt')}));
+ show($('#qmsg'),`共 ${r.records.length} 筆`,'ok');
+ $('#qsum').innerHTML=r.summary.map(s=>`<tr><td>${esc(s.cls)}</td><td>${esc(s.seat)}</td><td>${esc(s.name)}</td><td><span class="tag ${s.total>=3?'red':''}">${s.total}</span></td><td>${esc(s.status)}</td></tr>`).join('')||'<tr><td colspan="5" class="hint">無資料</td></tr>';
+ $('#qlist').innerHTML=r.records.map(x=>`<tr><td>${x.date}</td><td>${esc(x.cls)}</td><td>${esc(x.seat)}</td><td>${esc(x.name)}</td><td>${esc(x.item)}</td><td>${esc(x.note)}</td><td>${esc(x.teacher)}</td><td>${esc(x.total)}</td></tr>`).join('');
+});
+</script></body></html>
